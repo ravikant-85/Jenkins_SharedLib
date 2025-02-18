@@ -1,0 +1,91 @@
+pipeline {
+    agent any
+
+    parameters {
+        // Git Parameter to select the branch
+        gitParameter(
+            name: 'BRANCH',
+            type: 'PT_BRANCH',
+            description: 'Select the branch to build from',
+            defaultValue: 'main',
+            branchFilter: 'origin/*',
+            sortMode: 'DESCENDING',
+              useRepository: 'https://github.com/Sandy2k24/EasyTrip.git'
+        )
+    }
+
+    environment {
+        GITHUB_TOKEN = credentials('Github-Token')  // Fetch GitHub Token from Jenkins credentials
+        REPO_URL = 'https://github.com/Sandy2k24/EasyTrip.git'  // Private repo URL
+        CLONE_DIR = '/opt/easytrip'  // Directory to clone the repo
+        JAR_FILE_NAME = 'target/Travel-API-0.0.1-SNAPSHOT.jar'  // JAR file path inside the repo
+    }
+
+    stages {
+        stage('Clone Repository') {
+            steps {
+                script {
+                    sh """
+                    echo 'Checking if repository exists...'
+                    if [ ! -d "${CLONE_DIR}/.git" ]; then
+                        echo 'Cloning private repository...'
+                        git clone -b "${BRANCH}" https://$GITHUB_TOKEN@github.com/Sandy2k24/EasyTrip.git ${CLONE_DIR}
+                    else
+                        echo 'Repository already exists, skipping clone.'
+                    fi
+                    """
+                }
+            }
+        }
+
+        stage('Stop PM2 Process') {
+            steps {
+                script {
+                    sh 'sudo pm2 stop 0 || true'  // Stop PM2 if running
+                }
+            }
+        }
+
+        stage('Pull Latest Changes') {
+            steps {
+                script {
+                    dir("${CLONE_DIR}") {
+                        sh """
+                        echo 'Fetching latest changes...'
+                        git fetch origin
+                        git checkout "${BRANCH}"
+                        git pull origin "${BRANCH}"
+                        """
+                    }
+                }
+            }
+        }
+
+        stage('Build the JAR') {
+            steps {
+                script {
+                    dir("${CLONE_DIR}") {
+                        sh 'mvn clean package -DskipTests'  // Build JAR without tests
+                    }
+                }
+            }
+        }
+
+        stage('Start PM2 Process') {
+            steps {
+                script {
+                    sh "sudo pm2 start java -- -jar ${CLONE_DIR}/${JAR_FILE_NAME}"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Deployment successful!'
+        }
+        failure {
+            echo 'Deployment failed!'
+        }
+    }
+}
