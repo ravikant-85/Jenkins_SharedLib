@@ -1,0 +1,71 @@
+pipeline {
+    agent any  // Any available agent
+
+    environment {
+        GITHUB_CREDENTIALS = credentials('Github-Token')  // Jenkins credentials ID
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                script {
+                    echo "Checking out branch: ${env.BRANCH_NAME}"
+                }
+                git branch: "${env.BRANCH_NAME}", credentialsId: 'Github-Token', url: 'https://github.com/Sandy2k24/EasyTrip.git'
+            }
+        }
+
+        stage('Stop Running Service') {
+            steps {
+                script {
+                    def branch = env.BRANCH_NAME ?: 'main'
+                    def otherBranch = (branch == 'main') ? 'raj' : 'main'
+
+                    echo "Stopping existing service for branch: ${branch} (if running)"
+                    sh "sudo systemctl stop travel-api-${branch} || true"
+                    
+                    echo "Stopping other service: ${otherBranch} (if running)"
+                    sh "sudo systemctl stop travel-api-${otherBranch} || true"
+                }
+            }
+        }
+
+        stage('Clean Old Build') {
+            steps {
+                script {
+                    echo "Removing old build artifacts..."
+                    sh "rm -rf target"  // Purane target folder ko delete karega
+                }
+            }
+        }
+
+        stage('Build Application') {
+            steps {
+                script {
+                    echo "Building application for branch: ${env.BRANCH_NAME}"
+                }
+                sh 'mvn clean package -DskipTests'  // Java Spring Boot project ke liye build command
+            }
+        }
+
+        stage('Deploy') {
+            steps {
+                script {
+                    def branch = env.BRANCH_NAME ?: 'main'
+                    
+                    echo "Starting service for branch: ${branch}"
+                    sh "sudo systemctl start travel-api-${branch}"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline executed successfully!"
+        }
+        failure {
+            echo "Pipeline failed!"
+        }
+    }
+}
